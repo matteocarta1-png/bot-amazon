@@ -213,7 +213,7 @@ PRODOTTI = [
     }
 ]
 
-PERCENTUALE_MINIMA_SCONTO = 80.0  # Alert solo per sconti >= 80%
+PERCENTUALE_MINIMA_SCONTO = 10.0  # Alert solo per sconti >= 10%
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
