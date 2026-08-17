@@ -1,6 +1,7 @@
 import requests
 import time
 import re
+import random
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from bs4 import BeautifulSoup
@@ -8,7 +9,16 @@ from bs4 import BeautifulSoup
 # --- CONFIGURAZIONE BOT ---
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1538678502440706178/xRaJv_l3RhOirbbZ_AvDr1aFaV-bJeSKcWbnk3EiqHnwdqATTDAeKCs6LsPCdALnHkjG"
 
-# LISTA PRODOTTI TOP MAPPATI PER OGNI PAESE (ZERO 404)
+# Sconto minimo per inviare la notifica su Discord (es. 1.0 = 1%)
+PERCENTUALE_MINIMA_SCONTO = 1.0
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+]
+
+# LISTA PRODOTTI TOP MAPPATI PER OGNI PAESE
 PRODOTTI = [
     # --- CONSOLE & GAMING ---
     {
@@ -213,16 +223,7 @@ PRODOTTI = [
     }
 ]
 
-PERCENTUALE_MINIMA_SCONTO = 1.0  # Alert solo per sconti >= 1%
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive"
-}
-
-# Web Server interno per Render
+# Web Server interno per Keep-Alive su Render
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -240,34 +241,36 @@ def start_health_server():
     server.serve_forever()
 
 def invia_notifica_discord(nome, paese, prezzo_attuale, prezzo_listino, percentuale_sconto, url):
+    simbolo_valuta = "£" if "UK" in paese or "Regno Unito" in paese else "€"
     payload = {
-        "content": f"@everyone 🚨 *SUPER ERRORE DI PREZZO su {paese} (-{percentuale_sconto:.0f}%)!* 🚨",
+        "content": f"@everyone 🚨 OFFERTA RILEVATA su {paese} (-{percentuale_sconto:.0f}%)! 🚨",
         "embeds": [
             {
                 "title": f"📦 {nome} ({paese})",
-                "description": f"Il prezzo è crollato del *{percentuale_sconto:.1f}%* su Amazon!",
+                "description": f"Il prezzo è sceso del {percentuale_sconto:.1f}% su Amazon!",
                 "url": url,
-                "color": 15158332,
+                "color": 3066993,
                 "fields": [
-                    {"name": "🌍 Store", "value": f"*{paese}*", "inline": True},
-                    {"name": "🔥 Prezzo Scontato", "value": f"*{prezzo_attuale:.2f} €*", "inline": True},
-                    {"name": "❌ Prezzo Listino", "value": f"~{prezzo_listino:.2f} €~", "inline": True},
-                    {"name": "📉 Sconto Rilevato", "value": f"*-{percentuale_sconto:.0f}%*", "inline": True},
-                    {"name": "🛒 Link Acquisto Direct", "value": f"[Apri subito su {paese}]({url})", "inline": False}
+                    {"name": "🌍 Store", "value": f"{paese}", "inline": True},
+                    {"name": "🔥 Prezzo Scontato", "value": f"{prezzo_attuale:.2f} {simbolo_valuta}", "inline": True},
+                    {"name": "❌ Prezzo Listino", "value": f"{prezzo_listino:.2f} {simbolo_valuta}", "inline": True},
+                    {"name": "📉 Sconto Rilevato", "value": f"-{percentuale_sconto:.0f}%", "inline": True},
+                    {"name": "🛒 Link Acquisto", "value": f"[Apri prodotto su {paese}]({url})", "inline": False}
                 ],
-                "footer": {"text": "Amazon Price Tracker Bot Europe • Alert 80%+ Sconto"},
+                "footer": {"text": "Amazon Europe Price Tracker Bot"},
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ")
             }
         ]
     }
     try:
         requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-        print(f"✅ Notifica inviata per {nome} ({paese})", flush=True)
+        print(f"✅ Notifica inviata su Discord per {nome} ({paese})", flush=True)
     except Exception as e:
         print(f"❌ Errore invio Discord: {e}", flush=True)
 
 def estrai_dati_prezzo(soup):
     try:
+        # Metodo 1: Badge Percentuale Sconto + Prezzo Attuale
         badge_sconto = soup.select_one("span.savingsPercentage")
         if badge_sconto:
             match_sconto = re.search(r'([0-9]+)', badge_sconto.get_text())
@@ -281,6 +284,7 @@ def estrai_dati_prezzo(soup):
                         prezzo_listino = prezzo_attuale / (1 - (sconto_percentuale / 100))
                         return prezzo_attuale, prezzo_listino, sconto_percentuale
 
+        # Metodo 2: Prezzo Barrato (Listino) + Prezzo Attuale
         elem_listino = soup.select_one("span.a-price[data-a-strike='true'] span.a-offscreen, .basisPrice span.a-offscreen")
         elem_attuale = soup.select_one("span.a-price span.a-offscreen")
         
@@ -296,6 +300,14 @@ def estrai_dati_prezzo(soup):
                     sconto_percentuale = ((prezzo_listino - prezzo_attuale) / prezzo_listino) * 100
                     return prezzo_attuale, prezzo_listino, sconto_percentuale
 
+        # Metodo 3: Nessuno sconto trovato, ma estraiamo comunque il prezzo base
+        elem_solo_prezzo = soup.select_one("span.a-price span.a-offscreen")
+        if elem_solo_prezzo:
+            match_sp = re.search(r'([0-9]+[\.,][0-9]+)', elem_solo_prezzo.get_text().strip())
+            if match_sp:
+                prezzo_attuale = float(match_sp.group(1).replace('.', '').replace(',', '.'))
+                return prezzo_attuale, prezzo_attuale, 0.0
+
     except Exception:
         pass
         
@@ -303,36 +315,51 @@ def estrai_dati_prezzo(soup):
 
 def controlla_prezzi():
     while True:
-        print(f"\n--- Inizio ciclo di controllo 45 Prodotti Top ({time.strftime('%H:%M:%S')}) ---", flush=True)
+        print(f"\n--- Inizio ciclo di controllo ({time.strftime('%H:%M:%S')}) ---", flush=True)
         for prod in PRODOTTI:
             for paese, (domain, asin) in prod["asins"].items():
                 url = f"https://www.{domain}/dp/{asin}"
-                print(f"🔍 Controllo {paese}: {prod['nome']}...", flush=True)
-                
+                headers = {
+                    "User-Agent": random.choice(USER_AGENTS),
+                    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Connection": "keep-alive"
+                }
+
                 try:
-                    response = requests.get(url, headers=HEADERS, timeout=15)
-                    if response.status_code == 200:
-                        soup = BeautifulSoup(response.content, "html.parser")
-                        prezzo_attuale, prezzo_listino, sconto_percentuale = estrai_dati_prezzo(soup)
-                        
-                        if prezzo_attuale:
-                            print(f"   [{paese}] Prezzo: {prezzo_attuale:.2f} € | Sconto: {sconto_percentuale:.1f}%", flush=True)
-                            if sconto_percentuale >= PERCENTUALE_MINIMA_SCONTO:
-                                print(f"   🚨 ALLARME SU {paese}! Sconto del {sconto_percentuale:.1f}%!", flush=True)
-                                invia_notifica_discord(prod['nome'], paese, prezzo_attuale, prezzo_listino, sconto_percentuale, url)
-                        else:
-                            print(f"   ℹ️ [{paese}] Nessun prezzo/sconto rilevato.", flush=True)
-                    else:
-                        print(f"   ⚠️ [{paese}] Risposta: {response.status_code}", flush=True)
-                except Exception as e:
-                    print(f"   ❌ Errore durante il controllo su {paese}: {e}", flush=True)
+                    r = requests.get(url, headers=headers, timeout=12)
                     
-                time.sleep(3)
-                
-        print("\n😴 Scansione completata! Attesa di 3 minuti prima del prossimo ciclo...", flush=True)
+                    if r.status_code == 404:
+                        print(f"⚠️ [{paese}] Risposta: 404 (ASIN {asin} non trovato)", flush=True)
+                        continue
+                    elif "captcha" in r.text.lower() or "robot" in r.text.lower() or r.status_code == 503:
+                        print(f"🚫 [{paese}] Amazon ha bloccato temporaneamente la richiesta (Bot/Captcha)", flush=True)
+                        time.sleep(5)
+                        continue
+
+                    soup = BeautifulSoup(r.content, "html.parser")
+                    p_attuale, p_listino, sconto = estrai_dati_prezzo(soup)
+
+                    if p_attuale:
+                        if sconto >= PERCENTUALE_MINIMA_SCONTO:
+                            print(f"🔥 [{paese}] {prod['nome']} -> Prezzo: {p_attuale:.2f}€ | Listino: {p_listino:.2f}€ | SCONTO: {sconto:.1f}%", flush=True)
+                            invia_notifica_discord(prod['nome'], paese, p_attuale, p_listino, sconto, url)
+                        else:
+                            print(f"ℹ️ [{paese}] {prod['nome']} -> Prezzo: {p_attuale:.2f}€ (Nessuno sconto o inferiore a {PERCENTUALE_MINIMA_SCONTO}%)", flush=True)
+                    else:
+                        print(f"❌ [{paese}] {prod['nome']} -> Impossibile leggere il prezzo (Tag non presente)", flush=True)
+
+                except Exception as e:
+                    print(f"❌ [{paese}] Errore durante il controllo di {prod['nome']}: {e}", flush=True)
+
+                # Pausa casuale tra 2 e 5 secondi per non sovraccaricare le richieste
+                time.sleep(random.uniform(2, 5))
+
+        print(f"\n--- Scansione completata! Attesa di 3 minuti prima del prossimo ciclo... ---", flush=True)
         time.sleep(180)
 
 if __name__ == "__main__":
-    print("🚀 Bot Amazon Europe 45 Products Zero-404 Avviato!", flush=True)
+    # Avvia il server HTTP per il Keep-Alive di Render
     threading.Thread(target=start_health_server, daemon=True).start()
+    # Avvia il monitoraggio prezzi
     controlla_prezzi()
