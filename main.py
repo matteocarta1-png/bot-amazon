@@ -1,4 +1,24 @@
-import requests
+[15:28, 17/08/2026] Matteo: import requests
+import time
+import re
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from bs4 import BeautifulSoup
+
+# --- CONFIGURAZIONE BOT ---
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1538678502440706178/xRaJv_l3RhOirbbZ_AvDr1aFaV-bJeSKcWbnk3EiqHnwdqATTDAeKCs6LsPCdALnHkjG"
+
+# LISTA PRODOTTI MONITORATI
+PRODOTTI = [
+    # --- PLAYSTATION & GAMING ---
+    {"asin": "B08N5WRWNW", "nome": "PlayStation 5 Console Standard"},
+    {"asin": "B0CLTF9723", "nome": "PlayStation 5 Digital Edition (Slim)"},
+    {"asin": "B080000000", "nome": "DualSense Controller PS5 Wireless"},
+    
+    # --- TELEFONIA & AUDIO ---
+    {"asin": "B09G9F5C1R", "nome": "Apple AirPods Pro (2ª Gen)"},
+    {"asin": "B08H93ZRK9", "nome": "Apple iPhone …
+[15:33, 17/08/2026] Matteo: import requests
 import time
 import re
 import threading
@@ -58,12 +78,18 @@ HEADERS = {
     "Connection": "keep-alive"
 }
 
-# Mini Server Web per soddisfare Render
+# Mini Server Web per soddisfare Render (gestisce GET e HEAD)
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
         self.wfile.write(b"Bot Amazon attivo e funzionante!")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
 
 def start_health_server():
     server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
@@ -162,7 +188,7 @@ def controlla_prezzi():
         print("\n😴 Attesa di 10 minuti prima della prossima scansione...")
         time.sleep(600)
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     print("🚀 Bot Amazon Tracker Sconti 80%+ Avviato!")
     threading.Thread(target=start_health_server, daemon=True).start()
     controlla_prezzi()
