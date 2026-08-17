@@ -1,3 +1,22 @@
+import requests
+import time
+import re
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from bs4 import BeautifulSoup
+
+# --- CONFIGURAZIONE BOT ---
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1538678502440706178/xRaJv_l3RhOirbbZ_AvDr1aFaV-bJeSKcWbnk3EiqHnwdqATTDAeKCs6LsPCdALnHkjG"
+
+PRODOTTI = [
+    {"asin": "B08N5WRWNW", "nome": "PlayStation 5 Console", "soglia_errore": 350.0},
+    {"asin": "B09G9F5C1R", "nome": "Apple AirPods Pro", "soglia_errore": 120.0},
+    {"asin": "B08H93ZRK9", "nome": "Apple iPhone 13 / 14 / 15", "soglia_errore": 450.0},
+    {"asin": "B0B7BPB3S9", "nome": "Samsung Galaxy S23 / S24 Ultra", "soglia_errore": 500.0},
+]
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebK…
 [15:28, 17/08/2026] Matteo: import requests
 import time
 import re
@@ -19,6 +38,26 @@ PRODOTTI = [
     {"asin": "B09G9F5C1R", "nome": "Apple AirPods Pro (2ª Gen)"},
     {"asin": "B08H93ZRK9", "nome": "Apple iPhone …
 [15:33, 17/08/2026] Matteo: import requests
+import time
+import re
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from bs4 import BeautifulSoup
+
+# --- CONFIGURAZIONE BOT ---
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1538678502440706178/xRaJv_l3RhOirbbZ_AvDr1aFaV-bJeSKcWbnk3EiqHnwdqATTDAeKCs6LsPCdALnHkjG"
+
+# LISTA PRODOTTI MONITORATI
+PRODOTTI = [
+    # --- PLAYSTATION & GAMING ---
+    {"asin": "B08N5WRWNW", "nome": "PlayStation 5 Console Standard"},
+    {"asin": "B0CLTF9723", "nome": "PlayStation 5 Digital Edition (Slim)"},
+    {"asin": "B080000000", "nome": "DualSense Controller PS5 Wireless"},
+    
+    # --- TELEFONIA & AUDIO ---
+    {"asin": "B09G9F5C1R", "nome": "Apple AirPods Pro (2ª Gen)"},
+    {"asin": "B08H93ZRK9", "nome": "Apple iPhone …
+[15:38, 17/08/2026] Matteo: import requests
 import time
 import re
 import threading
@@ -117,13 +156,12 @@ def invia_notifica_discord(nome, prezzo_attuale, prezzo_listino, percentuale_sco
     }
     try:
         requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-        print(f"✅ Notifica inviata con successo per {nome}")
+        print(f"✅ Notifica inviata con successo per {nome}", flush=True)
     except Exception as e:
-        print(f"❌ Errore invio Discord: {e}")
+        print(f"❌ Errore invio Discord: {e}", flush=True)
 
 def estrai_dati_prezzo(soup):
     try:
-        # Cerca la percentuale di sconto indicata da Amazon
         badge_sconto = soup.select_one("span.savingsPercentage")
         if badge_sconto:
             match_sconto = re.search(r'([0-9]+)', badge_sconto.get_text())
@@ -137,7 +175,6 @@ def estrai_dati_prezzo(soup):
                         prezzo_listino = prezzo_attuale / (1 - (sconto_percentuale / 100))
                         return prezzo_attuale, prezzo_listino, sconto_percentuale
 
-        # Calcola la differenza dal prezzo barrato
         elem_listino = soup.select_one("span.a-price[data-a-strike='true'] span.a-offscreen, .basisPrice span.a-offscreen")
         elem_attuale = soup.select_one("span.a-price span.a-offscreen")
         
@@ -154,16 +191,16 @@ def estrai_dati_prezzo(soup):
                     return prezzo_attuale, prezzo_listino, sconto_percentuale
 
     except Exception as e:
-        print(f"   ⚠️ Errore calcolo prezzi: {e}")
+        print(f"   ⚠️ Errore calcolo prezzi: {e}", flush=True)
         
     return None, None, 0.0
 
 def controlla_prezzi():
     while True:
-        print(f"\n--- Inizio ciclo di controllo ({time.strftime('%H:%M:%S')}) ---")
+        print(f"\n--- Inizio ciclo di controllo ({time.strftime('%H:%M:%S')}) ---", flush=True)
         for prod in PRODOTTI:
             url = f"https://www.amazon.it/dp/{prod['asin']}"
-            print(f"🔍 Controllo: {prod['nome']} ({prod['asin']})...")
+            print(f"🔍 Controllo: {prod['nome']} ({prod['asin']})...", flush=True)
             
             try:
                 response = requests.get(url, headers=HEADERS, timeout=15)
@@ -172,23 +209,23 @@ def controlla_prezzi():
                     prezzo_attuale, prezzo_listino, sconto_percentuale = estrai_dati_prezzo(soup)
                     
                     if prezzo_attuale:
-                        print(f"   Prezzo: {prezzo_attuale:.2f} € | Sconto: {sconto_percentuale:.1f}%")
+                        print(f"   Prezzo: {prezzo_attuale:.2f} € | Sconto: {sconto_percentuale:.1f}%", flush=True)
                         if sconto_percentuale >= PERCENTUALE_MINIMA_SCONTO:
-                            print(f"   🚨 ALLARME! Sconto del {sconto_percentuale:.1f}% rilevato!")
+                            print(f"   🚨 ALLARME! Sconto del {sconto_percentuale:.1f}% rilevato!", flush=True)
                             invia_notifica_discord(prod['nome'], prezzo_attuale, prezzo_listino, sconto_percentuale, url, prod['asin'])
                     else:
-                        print("   ℹ️ Nessun prezzo/sconto rilevato.")
+                        print("   ℹ️ Nessun prezzo/sconto rilevato.", flush=True)
                 else:
-                    print(f"   ⚠️ Risposta Amazon: {response.status_code}")
+                    print(f"   ⚠️ Risposta Amazon: {response.status_code}", flush=True)
             except Exception as e:
-                print(f"   ❌ Errore durante il controllo: {e}")
+                print(f"   ❌ Errore durante il controllo: {e}", flush=True)
                 
             time.sleep(5)  # Pausa tra i prodotti
             
-        print("\n😴 Attesa di 10 minuti prima della prossima scansione...")
+        print("\n😴 Attesa di 10 minuti prima della prossima scansione...", flush=True)
         time.sleep(600)
 
-if _name_ == "_main_":
-    print("🚀 Bot Amazon Tracker Sconti 80%+ Avviato!")
+if __name__ == "__main__":
+    print("🚀 Bot Amazon Tracker Sconti 80%+ Avviato!", flush=True)
     threading.Thread(target=start_health_server, daemon=True).start()
     controlla_prezzi()
