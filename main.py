@@ -1,6 +1,8 @@
 import requests
 import time
 import re
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from bs4 import BeautifulSoup
 
 # --- CONFIGURAZIONE BOT ---
@@ -19,6 +21,17 @@ HEADERS = {
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive"
 }
+
+# Mini Server Web per soddisfare Render Web Service
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot Amazon attivo e funzionante!")
+
+def start_health_server():
+    server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
+    server.serve_forever()
 
 def invia_notifica_discord(nome, prezzo, url, asin):
     payload = {
@@ -70,43 +83,43 @@ def estrai_prezzo(soup):
     return None
 
 def controlla_prezzi():
-    print(f"\n--- Inizio ciclo di controllo ({time.strftime('%H:%M:%S')}) ---")
-    for prod in PRODOTTI:
-        url = f"https://www.amazon.it/dp/{prod['asin']}"
-        print(f"🔍 Controllo: {prod['nome']} ({prod['asin']})...")
-        
-        try:
-            response = requests.get(url, headers=HEADERS, timeout=15)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.content, "html.parser")
-                prezzo = estrai_prezzo(soup)
-                
-                if prezzo:
-                    print(f"   Prezzo trovato: {prezzo:.2f} € (Soglia allarme: {prod['soglia_errore']} €)")
-                    if prezzo <= prod['soglia_errore']:
-                        print("   🚨 ALLARME! Prezzo inferiore alla soglia!")
-                        invia_notifica_discord(prod['nome'], prezzo, url, prod['asin'])
-                else:
-                    print("   ℹ️ Impossibile leggere il prezzo (potrebbe essere esaurito o bloccato).")
-            else:
-                print(f"   ⚠️ Risposta Amazon: Codice {response.status_code}")
-        except Exception as e:
-            print(f"   ❌ Errore durante il controllo: {e}")
+    while True:
+        print(f"\n--- Inizio ciclo di controllo ({time.strftime('%H:%M:%S')}) ---")
+        for prod in PRODOTTI:
+            url = f"https://www.amazon.it/dp/{prod['asin']}"
+            print(f"🔍 Controllo: {prod['nome']} ({prod['asin']})...")
             
-        time.sleep(5)
+            try:
+                response = requests.get(url, headers=HEADERS, timeout=15)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.content, "html.parser")
+                    prezzo = estrai_prezzo(soup)
+                    
+                    if prezzo:
+                        print(f"   Prezzo trovato: {prezzo:.2f} € (Soglia allarme: {prod['soglia_errore']} €)")
+                        if prezzo <= prod['soglia_errore']:
+                            print("   🚨 ALLARME! Prezzo inferiore alla soglia!")
+                            invia_notifica_discord(prod['nome'], prezzo, url, prod['asin'])
+                    else:
+                        print("   ℹ️ Impossibile leggere il prezzo.")
+                else:
+                    print(f"   ⚠️ Codice risposta Amazon: {response.status_code}")
+            except Exception as e:
+                print(f"   ❌ Errore: {e}")
+                
+            time.sleep(5)
+            
+        print("\n😴 Attesa di 10 minuti...")
+        time.sleep(600)
 
 if _name_ == "_main_":
     print("🚀 Bot Amazon Price Tracker avviato!")
-    print(f"Webhook configurato correttamente.")
     
-    invia_notifica_discord(
-        "TEST - Bot Avviato con Successo", 
-        0.00, 
-        "https://www.amazon.it", 
-        "TEST_ASIN"
-    )
+    # Invia messaggio di test all'avvio
+    invia_notifica_discord("TEST - Bot Avviato con Successo", 0.00, "https://www.amazon.it", "TEST_ASIN")
     
-    while True:
-        controlla_prezzi():
-        print("\n😴 Attesa di 10 minuti prima della prossima scansione...")
-        time.sleep(600)
+    # Avvia il server web in background per Render
+    threading.Thread(target=start_health_server, daemon=True).start()
+    
+    # Avvia il ciclo del bot
+    controlla_prezzi()
