@@ -9,14 +9,11 @@ from bs4 import BeautifulSoup
 # --- CONFIGURAZIONE BOT ---
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1538678502440706178/xRaJv_l3RhOirbbZ_AvDr1aFaV-bJeSKcWbnk3EiqHnwdqATTDAeKCs6LsPCdALnHkjG"
 
+# API Key di ScraperAPI presa dal tuo pannello
+SCRAPER_API_KEY = "83ce5ffe4fafd171995864cb1d058938"
+
 # Sconto minimo per inviare la notifica su Discord (es. 1.0 = 1%)
 PERCENTUALE_MINIMA_SCONTO = 1.0
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-]
 
 # LISTA PRODOTTI TOP MAPPATI PER OGNI PAESE
 PRODOTTI = [
@@ -270,7 +267,6 @@ def invia_notifica_discord(nome, paese, prezzo_attuale, prezzo_listino, percentu
 
 def estrai_dati_prezzo(soup):
     try:
-        # Metodo 1: Badge Percentuale Sconto + Prezzo Attuale
         badge_sconto = soup.select_one("span.savingsPercentage")
         if badge_sconto:
             match_sconto = re.search(r'([0-9]+)', badge_sconto.get_text())
@@ -284,7 +280,6 @@ def estrai_dati_prezzo(soup):
                         prezzo_listino = prezzo_attuale / (1 - (sconto_percentuale / 100))
                         return prezzo_attuale, prezzo_listino, sconto_percentuale
 
-        # Metodo 2: Prezzo Barrato (Listino) + Prezzo Attuale
         elem_listino = soup.select_one("span.a-price[data-a-strike='true'] span.a-offscreen, .basisPrice span.a-offscreen")
         elem_attuale = soup.select_one("span.a-price span.a-offscreen")
         
@@ -300,7 +295,6 @@ def estrai_dati_prezzo(soup):
                     sconto_percentuale = ((prezzo_listino - prezzo_attuale) / prezzo_listino) * 100
                     return prezzo_attuale, prezzo_listino, sconto_percentuale
 
-        # Metodo 3: Nessuno sconto trovato, ma estraiamo comunque il prezzo base
         elem_solo_prezzo = soup.select_one("span.a-price span.a-offscreen")
         if elem_solo_prezzo:
             match_sp = re.search(r'([0-9]+[\.,][0-9]+)', elem_solo_prezzo.get_text().strip())
@@ -319,22 +313,18 @@ def controlla_prezzi():
         for prod in PRODOTTI:
             for paese, (domain, asin) in prod["asins"].items():
                 url = f"https://www.{domain}/dp/{asin}"
-                headers = {
-                    "User-Agent": random.choice(USER_AGENTS),
-                    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Connection": "keep-alive"
-                }
+                
+                # Utilizzo di ScraperAPI per aggirare i blocchi e i captcha di Amazon
+                scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={url}"
 
                 try:
-                    r = requests.get(url, headers=headers, timeout=12)
+                    r = requests.get(scraper_url, timeout=30)
                     
                     if r.status_code == 404:
                         print(f"⚠️ [{paese}] Risposta: 404 (ASIN {asin} non trovato)", flush=True)
                         continue
-                    elif "captcha" in r.text.lower() or "robot" in r.text.lower() or r.status_code == 503:
-                        print(f"🚫 [{paese}] Amazon ha bloccato temporaneamente la richiesta (Bot/Captcha)", flush=True)
-                        time.sleep(5)
+                    elif r.status_code != 200:
+                        print(f"🚫 [{paese}] Errore HTTP {r.status_code} da ScraperAPI", flush=True)
                         continue
 
                     soup = BeautifulSoup(r.content, "html.parser")
@@ -352,14 +342,11 @@ def controlla_prezzi():
                 except Exception as e:
                     print(f"❌ [{paese}] Errore durante il controllo di {prod['nome']}: {e}", flush=True)
 
-                # Pausa casuale tra 2 e 5 secondi per non sovraccaricare le richieste
-                time.sleep(random.uniform(2, 5))
+                time.sleep(random.uniform(2, 4))
 
         print(f"\n--- Scansione completata! Attesa di 3 minuti prima del prossimo ciclo... ---", flush=True)
         time.sleep(180)
 
 if __name__ == "__main__":
-    # Avvia il server HTTP per il Keep-Alive di Render
     threading.Thread(target=start_health_server, daemon=True).start()
-    # Avvia il monitoraggio prezzi
     controlla_prezzi()
