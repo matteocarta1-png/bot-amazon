@@ -112,7 +112,7 @@ def controlla_prezzi():
         print("\n😴 Attesa di 10 minuti...")
         time.sleep(600)
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     print("🚀 Bot Amazon Price Tracker avviato!")
     
     # Invia messaggio di test all'avvio
